@@ -9,6 +9,26 @@
     <meta property="og:description" content="Embedded PW-PIPRO web app with custom Telegram community link and real-time path synchronization." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Gracefully silence harmless Vite HMR websocket disconnect warnings in sandboxed preview
+      window.addEventListener('unhandledrejection', function(event) {
+        if (event.reason && (
+          event.reason.message?.includes('WebSocket closed') ||
+          event.reason.message?.includes('failed to connect to websocket') ||
+          String(event.reason).includes('WebSocket')
+        )) {
+          event.preventDefault();
+        }
+      });
+      window.addEventListener('error', function(event) {
+        if (event.message && (
+          event.message.includes('WebSocket') ||
+          event.message.includes('failed to connect to websocket')
+        )) {
+          event.preventDefault();
+        }
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

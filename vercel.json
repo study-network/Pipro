@@ -18,6 +18,10 @@
       "destination": "/api?__route=/_serverFn/$1"
     },
     {
+      "source": "/_serverFn",
+      "destination": "/api?__route=/_serverFn"
+    },
+    {
       "source": "/favicon.svg",
       "destination": "/api?__route=/favicon.svg"
     },
@@ -26,7 +30,7 @@
       "destination": "/api?__route=/api/$1"
     },
     {
-      "source": "/((?!app-assets/|assets/|frame|api/|_serverFn/|favicon\\.svg).*)",
+      "source": "/((?!app-assets/|assets/|frame|api/|_serverFn|favicon\\.svg).*)",
       "destination": "/index.html"
     }
   ]

@@ -5,7 +5,17 @@ export const TARGET_ORIGIN = 'https://pi.pwmarco.info';
 // Helper to replace branding and Telegram links
 export function transformContent(content: string): string {
   if (!content) return content;
-  return content
+
+  // Fix categories disappearing on reload bug in home route
+  const homeRouteRegex = /function p\(\)\{let\[e,t\]=\(0,l\.useState\)\(null\)[\s\S]*?\(0,u\.jsx\)\(c,\{categoryId:e\.id\},e\.id\)\]\}\)\}\)\}/;
+  const fixedPHome = 'function p(){let[e,t]=(0,l.useState)(()=>{try{let s=localStorage.getItem(d);return s?JSON.parse(s):null;}catch{return null;}});return(0,u.jsx)(a,{children:(0,u.jsxs)(u.Fragment,{children:[e?(0,u.jsxs)(u.Fragment,{children:[(0,u.jsxs)(`div`,{className:`mb-4 mt-2 flex items-center justify-between gap-3 rounded-2xl bg-card p-4 border border-border/40 shadow-sm`,children:[(0,u.jsxs)(`div`,{children:[(0,u.jsx)(`p`,{className:`text-xs font-medium text-muted-foreground`,children:`Selected Goal`}),(0,u.jsx)(`h1`,{className:`text-2xl font-extrabold tracking-tight`,children:e.name})]}),(0,u.jsx)(`button`,{onClick:()=>{t(null);try{localStorage.removeItem(d)}catch{}},className:`rounded-full bg-secondary hover:bg-secondary/80 px-4 py-2 text-xs font-semibold text-secondary-foreground transition`,children:`View All Goals`})]}),(0,u.jsx)(c,{categoryId:e.id},e.id),(0,u.jsxs)(`div`,{className:`mb-4 mt-10 text-center`,children:[(0,u.jsx)(`h2`,{className:`text-xl font-bold tracking-tight`,children:`All Categories`}),(0,u.jsx)(`p`,{className:`mt-1 text-xs text-muted-foreground`,children:`Switch or select another goal`})]})]}):(0,u.jsxs)(`div`,{className:`mb-6 mt-2 text-center`,children:[(0,u.jsx)(`h1`,{className:`text-3xl font-extrabold tracking-tight`,children:`Choose your Goal`}),(0,u.jsx)(`p`,{className:`mt-1 text-sm text-muted-foreground`,children:`Select a category to continue`})]}),(0,u.jsx)(l.Suspense,{fallback:(0,u.jsx)(h,{}),children:(0,u.jsx)(m,{onChoose:cat=>{t(cat);try{localStorage.setItem(d,JSON.stringify(cat))}catch{};window.scrollTo({top:0,behavior:`smooth`});}})})]})})}';
+
+  let res = content;
+  if (homeRouteRegex.test(res)) {
+    res = res.replace(homeRouteRegex, fixedPHome);
+  }
+
+  return res
     // Replace Telegram links and handles
     .replace(/https?:\/\/t\.me\/official_marco_22\/?/gi, 'https://t.me/+lxSx0imjBEo2ZTll')
     .replace(/http:\/\/t\.me\/official_marco_22\/?/gi, 'https://t.me/+lxSx0imjBEo2ZTll')
@@ -198,7 +208,7 @@ const INJECTED_BODY_SCRIPT = `
 // Helper to read raw request body
 function getRequestBody(req: IncomingMessage): Promise<Buffer | null> {
   return new Promise((resolve) => {
-    // If body was already parsed by express
+    // If body was already parsed by express or other middleware
     if ((req as any).body) {
       const b = (req as any).body;
       if (Buffer.isBuffer(b)) return resolve(b);
@@ -206,12 +216,25 @@ function getRequestBody(req: IncomingMessage): Promise<Buffer | null> {
       if (typeof b === 'object') return resolve(Buffer.from(JSON.stringify(b)));
     }
 
+    // If stream is not readable or already ended
+    if (typeof (req as any).on !== 'function' || (req as any).readableEnded || (req as any).complete) {
+      return resolve(null);
+    }
+
     const chunks: Buffer[] = [];
+    const timer = setTimeout(() => {
+      resolve(chunks.length > 0 ? Buffer.concat(chunks) : null);
+    }, 3000);
+
     req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
     req.on('end', () => {
+      clearTimeout(timer);
       resolve(chunks.length > 0 ? Buffer.concat(chunks) : null);
     });
-    req.on('error', () => resolve(null));
+    req.on('error', () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
   });
 }
 
@@ -259,9 +282,24 @@ export default async function handler(req: any, res: any) {
       (req.headers['x-forwarded-uri'] as string) ||
       urlObj.pathname;
 
-    // Remove __route from query string for forwarding
-    urlObj.searchParams.delete('__route');
-    const forwardedQuery = urlObj.searchParams.toString() ? `?${urlObj.searchParams.toString()}` : '';
+    // Ensure route does not contain trailing query string if passed inside __route
+    if (route.includes('?')) {
+      const qIdx = route.indexOf('?');
+      route = route.slice(0, qIdx);
+    }
+
+    // Extract exact raw query string without __route to preserve Seroval serialization
+    const qIndex = originalUrl.indexOf('?');
+    let forwardedQuery = '';
+    if (qIndex !== -1) {
+      let rawQuery = originalUrl.slice(qIndex + 1);
+      rawQuery = rawQuery
+        .replace(/(?:^|&)__route=[^&]*/, '')
+        .replace(/^&/, '');
+      if (rawQuery) {
+        forwardedQuery = '?' + rawQuery;
+      }
+    }
 
     // Route: Health check
     if (route === '/api/health' || route === '/health') {
@@ -269,7 +307,7 @@ export default async function handler(req: any, res: any) {
         res,
         200,
         { 'Content-Type': 'application/json' },
-        JSON.stringify({ status: 'ok', target: TARGET_ORIGIN })
+        JSON.stringify({ status: 'ok', target: TARGET_ORIGIN, route, originalUrl, headers: req.headers })
       );
     }
 
@@ -328,39 +366,78 @@ export default async function handler(req: any, res: any) {
     }
 
     // Route: /_serverFn/*
-    if (route.startsWith('/_serverFn/') || route.startsWith('/api/_serverFn/')) {
+    if (route.startsWith('/_serverFn') || route.startsWith('/api/_serverFn')) {
       const fnSubpath = route.replace(/^\/api/, '');
       const upstreamUrl = `${TARGET_ORIGIN}${fnSubpath}${forwardedQuery}`;
 
       const headers: Record<string, string> = {
-        'User-Agent': (req.headers['user-agent'] as string) || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Referer': TARGET_ORIGIN
+        'User-Agent': (req.headers['user-agent'] as string) || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': TARGET_ORIGIN + '/',
+        'Origin': TARGET_ORIGIN,
+        'Accept': (req.headers['accept'] as string) || 'application/x-tss-framed, application/x-ndjson, application/json, text/plain, */*'
       };
-      if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'] as string;
-      if (req.headers['accept']) headers['accept'] = req.headers['accept'] as string;
-      if (req.headers['cookie']) headers['cookie'] = req.headers['cookie'] as string;
 
-      const bodyBuffer = await getRequestBody(req);
+      // Forward relevant incoming headers (TanStack RPC headers, cookies, encoding)
+      const allowedHeaders = [
+        'x-tsr-serverfn',
+        'x-tsr-call-id',
+        'content-type',
+        'accept-language',
+        'cookie',
+        'x-tss-raw',
+        'x-tss-framed',
+        'x-tss-serialized'
+      ];
+      for (const name of allowedHeaders) {
+        if (req.headers[name]) {
+          headers[name] = req.headers[name] as string;
+        }
+      }
+      // Guarantee TanStack Server Function identifier header
+      headers['x-tsr-serverfn'] = 'true';
+
+      let bodyBuffer: Buffer | null = null;
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        bodyBuffer = await getRequestBody(req);
+      }
+
       const fetchOptions: RequestInit = {
         method: req.method || 'GET',
         headers
       };
-      if (req.method !== 'GET' && req.method !== 'HEAD' && bodyBuffer) {
+      if (bodyBuffer) {
         fetchOptions.body = bodyBuffer;
       }
 
       try {
         const upstreamRes = await fetch(upstreamUrl, fetchOptions);
+
+        // Collect all upstream headers to forward back to client (preserves x-tss-serialized, etc.)
+        const responseHeaders: Record<string, string> = {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': '*'
+        };
+        upstreamRes.headers.forEach((value, key) => {
+          const lKey = key.toLowerCase();
+          if (lKey !== 'content-encoding' && lKey !== 'content-length' && lKey !== 'transfer-encoding' && lKey !== 'connection') {
+            responseHeaders[key] = value;
+          }
+        });
+        if (!responseHeaders['Content-Type'] && !responseHeaders['content-type']) {
+          responseHeaders['Content-Type'] = 'application/json';
+        }
+
         const contentType = upstreamRes.headers.get('content-type') || 'application/json';
 
         if (contentType.includes('text') || contentType.includes('json') || contentType.includes('application/x-tss-framed')) {
           const text = await upstreamRes.text();
           const transformed = transformContent(text);
-          return sendResponse(res, upstreamRes.status, { 'Content-Type': contentType }, transformed);
+          return sendResponse(res, upstreamRes.status, responseHeaders, transformed);
         }
 
         const buffer = Buffer.from(await upstreamRes.arrayBuffer());
-        return sendResponse(res, upstreamRes.status, { 'Content-Type': contentType }, buffer);
+        return sendResponse(res, upstreamRes.status, responseHeaders, buffer);
       } catch (err: any) {
         console.error(`Error proxying server function ${route}:`, err.message);
         return sendResponse(res, 502, { 'Content-Type': 'text/plain' }, 'Server Function Proxy Error');

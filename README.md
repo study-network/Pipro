@@ -55,6 +55,5 @@ Deployment turant complete ho jayegi aur production URL mil jayega!
 ## Project Structure & Architecture
 
 - **`vercel.json`**: Vercel ke routing rules configured hain jo `/frame`, `/assets`, aur `/_serverFn` requests ko serverless API (`/api/index.ts`) par route karte hain aur baaki sabhi routes par Vite client-side SPA serve karte hain.
-- **`api/index.ts`**: Vercel Serverless Function entry point.
-- **`server/app.ts`**: Core Express app jo target server se live content proxy karta hai, `MARCO` ko `Pw` se replace karta hai aur Telegram links ko update karta hai.
+- **`api/index.ts`**: Self-contained Vercel Serverless Function jo target server se live content proxy karta hai, `MARCO` ko `Pw` se replace karta hai aur Telegram links ko update karta hai.
 - **`src/App.tsx`**: Full-screen clean web viewport bina kisi extra top frame ke.

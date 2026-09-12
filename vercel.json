@@ -1,30 +1,32 @@
 {
   "version": 2,
-  "framework": "vite",
-  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/frame",
-      "destination": "/api"
+      "destination": "/api?__route=/frame"
     },
     {
       "source": "/frame/(.*)",
-      "destination": "/api"
+      "destination": "/api?__route=/frame/$1"
     },
     {
       "source": "/assets/(.*)",
-      "destination": "/api"
+      "destination": "/api?__route=/assets/$1"
     },
     {
       "source": "/_serverFn/(.*)",
-      "destination": "/api"
+      "destination": "/api?__route=/_serverFn/$1"
+    },
+    {
+      "source": "/favicon.svg",
+      "destination": "/api?__route=/favicon.svg"
     },
     {
       "source": "/api/(.*)",
-      "destination": "/api"
+      "destination": "/api?__route=/api/$1"
     },
     {
-      "source": "/((?!assets/|frame|api/|_serverFn/).*)",
+      "source": "/((?!app-assets/|assets/|frame|api/|_serverFn/|favicon\\.svg).*)",
       "destination": "/index.html"
     }
   ]

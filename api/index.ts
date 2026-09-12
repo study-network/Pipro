@@ -186,6 +186,57 @@ const INJECTED_BODY_SCRIPT = `
       }
     }, true);
 
+    // 6. Fullscreen toggle integration
+    function toggleAppFullscreen() {
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'TOGGLE_FULLSCREEN' }, '*');
+        } else {
+          var doc = document;
+          var isFull = doc.fullscreenElement || (doc as any).webkitFullscreenElement || (doc as any).mozFullScreenElement;
+          if (!isFull) {
+            var el = doc.documentElement;
+            if (el.requestFullscreen) el.requestFullscreen();
+            else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
+            else if ((el as any).mozRequestFullScreen) (el as any).mozRequestFullScreen();
+          } else {
+            if (doc.exitFullscreen) doc.exitFullscreen();
+            else if ((doc as any).webkitExitFullscreen) (doc as any).webkitExitFullscreen();
+            else if ((doc as any).mozCancelFullScreen) (doc as any).mozCancelFullScreen();
+          }
+        }
+      } catch(e) {}
+    }
+
+    function injectHeaderFullscreenButton() {
+      try {
+        if (document.getElementById('__pw_header_fs_btn__')) return;
+        var headerContainer = document.querySelector('header div.max-w-6xl') || document.querySelector('header > div');
+        if (headerContainer) {
+          var btn = document.createElement('button');
+          btn.id = '__pw_header_fs_btn__';
+          btn.type = 'button';
+          btn.title = 'Full Screen (F)';
+          btn.setAttribute('aria-label', 'Toggle Full Screen');
+          btn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-card text-muted-foreground hover:text-foreground hover:bg-accent transition cursor-pointer border border-border/30';
+          btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+          btn.onclick = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleAppFullscreen();
+          };
+          headerContainer.appendChild(btn);
+        }
+      } catch(e) {}
+    }
+
+    // Keyboard shortcut 'F' for fullscreen when not focused on input/textarea
+    document.addEventListener('keydown', function(e) {
+      if ((e.key === 'f' || e.key === 'F') && !['INPUT', 'TEXTAREA'].includes(((e.target && (e.target as any).tagName) || ''))) {
+        toggleAppFullscreen();
+      }
+    });
+
     window.addEventListener('message', function(e) {
       if (!e.data || typeof e.data !== 'object') return;
       if (e.data.type === 'PARENT_NAVIGATE') {
@@ -201,6 +252,11 @@ const INJECTED_BODY_SCRIPT = `
         window.location.reload();
       }
     });
+
+    // Run header button injection on load and DOM mutations
+    document.addEventListener('DOMContentLoaded', injectHeaderFullscreenButton);
+    window.addEventListener('load', injectHeaderFullscreenButton);
+    setInterval(injectHeaderFullscreenButton, 1000);
   })();
 </script>
 `;

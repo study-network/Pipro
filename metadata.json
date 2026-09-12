@@ -1,0 +1,6 @@
+{
+  "name": "PW Pi Pro Web App",
+  "description": "Embedded PW-PIPRO web app with custom Telegram community link and real-time path synchronization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

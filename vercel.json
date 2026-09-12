@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "framework": "vite",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/frame",
+      "destination": "/api"
+    },
+    {
+      "source": "/frame/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/assets/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/_serverFn/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/((?!assets/|frame|api/|_serverFn/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

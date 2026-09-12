@@ -18,28 +18,49 @@ app.use((req, res, next) => {
   next();
 });
 
-// Forward proxy routes to Vercel-compatible handler
-app.all(
-  [
-    '/frame',
-    '/frame/*',
-    '/assets/*',
-    '/_serverFn',
-    '/_serverFn/*',
-    '/api',
-    '/api/*',
-    '/favicon.svg'
-  ],
-  (req, res) => {
-    handler(req, res);
-  }
-);
+// Forward proxy routes and application paths to Vercel-compatible handler
+const PROXIED_PATHS = [
+  '/',
+  '/category',
+  '/category/*',
+  '/series',
+  '/series/*',
+  '/watch',
+  '/watch/*',
+  '/teacher',
+  '/teacher/*',
+  '/search',
+  '/search/*',
+  '/library',
+  '/library/*',
+  '/goal',
+  '/goal/*',
+  '/batch',
+  '/batch/*',
+  '/courses',
+  '/courses/*',
+  '/frame',
+  '/frame/*',
+  '/assets/*',
+  '/_serverFn',
+  '/_serverFn/*',
+  '/api',
+  '/api/*',
+  '/favicon.svg'
+];
 
-// If an iframe navigates directly to app routes, forward to handler
+app.all(PROXIED_PATHS, (req, res, next) => {
+  // Allow explicit access to shell view if requested (?view=shell or /app)
+  if (req.query.view === 'shell' || req.path === '/app') {
+    return next();
+  }
+  handler(req, res);
+});
+
+// Fallback check for any dynamic subroutes (e.g. /category/..., /series/...)
 app.use((req, res, next) => {
-  const isIframe = req.headers['sec-fetch-dest'] === 'iframe' || req.headers['x-pw-frame'] === 'true';
-  const isAppRoute = /^\/(category|series|watch|teacher|search|library)(\/|$)/.test(req.path);
-  if (isIframe && isAppRoute) {
+  const isAppRoute = /^\/(category|series|watch|teacher|search|library|goal|batch|courses)(\/|$)/.test(req.path);
+  if (isAppRoute && req.query.view !== 'shell') {
     return handler(req, res);
   }
   next();

@@ -39,7 +39,8 @@ const INJECTED_HEAD_SCRIPT = `
       if (window.location.pathname.startsWith('/frame')) {
         var realPath = window.location.pathname.replace(/^\\/frame/, '') || '/';
         window.__PW_REAL_PATH__ = realPath;
-        window.history.replaceState(null, '', realPath + window.location.search + window.location.hash);
+        var existingState = window.history.state;
+        window.history.replaceState(existingState || {}, '', realPath + window.location.search + window.location.hash);
       }
     } catch(e) {
       console.warn('Path sync init error:', e);
@@ -190,43 +191,114 @@ const INJECTED_BODY_SCRIPT = `
     function toggleAppFullscreen() {
       try {
         if (window.parent && window.parent !== window) {
-          window.parent.postMessage({ type: 'TOGGLE_FULLSCREEN' }, '*');
+          try {
+            window.parent.postMessage({ type: 'TOGGLE_FULLSCREEN' }, '*');
+          } catch(err) {}
+        }
+        var doc = document;
+        var isFull = Boolean(doc.fullscreenElement || (doc as any).webkitFullscreenElement || (doc as any).mozFullScreenElement || (doc as any).msFullscreenElement);
+        if (!isFull) {
+          var el = doc.documentElement;
+          if (el.requestFullscreen) {
+            el.requestFullscreen().catch(function(){});
+          } else if ((el as any).webkitRequestFullscreen) {
+            (el as any).webkitRequestFullscreen();
+          } else if ((el as any).mozRequestFullScreen) {
+            (el as any).mozRequestFullScreen();
+          } else if ((el as any).msRequestFullscreen) {
+            (el as any).msRequestFullscreen();
+          }
         } else {
-          var doc = document;
-          var isFull = doc.fullscreenElement || (doc as any).webkitFullscreenElement || (doc as any).mozFullScreenElement;
-          if (!isFull) {
-            var el = doc.documentElement;
-            if (el.requestFullscreen) el.requestFullscreen();
-            else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
-            else if ((el as any).mozRequestFullScreen) (el as any).mozRequestFullScreen();
-          } else {
-            if (doc.exitFullscreen) doc.exitFullscreen();
-            else if ((doc as any).webkitExitFullscreen) (doc as any).webkitExitFullscreen();
-            else if ((doc as any).mozCancelFullScreen) (doc as any).mozCancelFullScreen();
+          if (doc.exitFullscreen) {
+            doc.exitFullscreen().catch(function(){});
+          } else if ((doc as any).webkitExitFullscreen) {
+            (doc as any).webkitExitFullscreen();
+          } else if ((doc as any).mozCancelFullScreen) {
+            (doc as any).mozCancelFullScreen();
+          } else if ((doc as any).msExitFullscreen) {
+            (doc as any).msExitFullscreen();
           }
         }
       } catch(e) {}
     }
 
-    function injectHeaderFullscreenButton() {
+    function updateFullscreenUI() {
       try {
-        if (document.getElementById('__pw_header_fs_btn__')) return;
-        var headerContainer = document.querySelector('header div.max-w-6xl') || document.querySelector('header > div');
-        if (headerContainer) {
-          var btn = document.createElement('button');
-          btn.id = '__pw_header_fs_btn__';
-          btn.type = 'button';
-          btn.title = 'Full Screen (F)';
-          btn.setAttribute('aria-label', 'Toggle Full Screen');
-          btn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-card text-muted-foreground hover:text-foreground hover:bg-accent transition cursor-pointer border border-border/30';
-          btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
-          btn.onclick = function(e) {
+        var doc = document;
+        var isFull = Boolean(doc.fullscreenElement || (doc as any).webkitFullscreenElement || (doc as any).mozFullScreenElement || (doc as any).msFullscreenElement);
+        
+        // Update floating button
+        var floatBtn = document.getElementById('__pw_floating_fs_btn__');
+        if (floatBtn) {
+          var floatLabel = floatBtn.querySelector('.fs-label');
+          if (floatLabel) floatLabel.textContent = isFull ? 'Exit' : 'Full Screen';
+          floatBtn.setAttribute('title', isFull ? 'Exit Full Screen (F)' : 'Full Screen (F)');
+        }
+
+        // Update header button
+        var headerBtn = document.getElementById('__pw_header_fs_btn__');
+        if (headerBtn) {
+          headerBtn.setAttribute('title', isFull ? 'Exit Full Screen (F)' : 'Full Screen (F)');
+          if (isFull) {
+            headerBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6m10-10h-6V4m0 6 7-7M9 15l-7 7"/></svg>';
+          } else {
+            headerBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+          }
+        }
+      } catch(e) {}
+    }
+
+    function injectFullscreenButtons() {
+      try {
+        // 1. In-header button
+        if (!document.getElementById('__pw_header_fs_btn__')) {
+          var headerContainer = document.querySelector('header div.max-w-6xl') || document.querySelector('header > div');
+          if (headerContainer) {
+            var btn = document.createElement('button');
+            btn.id = '__pw_header_fs_btn__';
+            btn.type = 'button';
+            btn.title = 'Full Screen (F)';
+            btn.setAttribute('aria-label', 'Toggle Full Screen');
+            btn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-card text-muted-foreground hover:text-foreground hover:bg-accent transition cursor-pointer border border-border/30';
+            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+            btn.onclick = function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleAppFullscreen();
+            };
+            headerContainer.appendChild(btn);
+          }
+        }
+
+        // 2. Persistent Top-Right Floating Fullscreen Button
+        if (!document.getElementById('__pw_floating_fs_btn__') && document.body) {
+          var floatBtn = document.createElement('button');
+          floatBtn.id = '__pw_floating_fs_btn__';
+          floatBtn.type = 'button';
+          floatBtn.title = 'Full Screen (F)';
+          floatBtn.setAttribute('aria-label', 'Toggle Full Screen');
+          floatBtn.style.cssText = 'position:fixed;top:12px;right:14px;z-index:99999;display:flex;align-items:center;gap:6px;background:rgba(18,18,22,0.85);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.15);border-radius:9999px;padding:6px 12px;color:#f4f4f5;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.4);transition:all 0.2s ease;';
+          floatBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg><span class="fs-label" style="line-height:1">Full Screen</span>';
+          
+          floatBtn.onmouseover = function() {
+            floatBtn.style.background = 'rgba(30,30,36,0.95)';
+            floatBtn.style.borderColor = 'rgba(251,191,36,0.5)';
+            floatBtn.style.transform = 'scale(1.02)';
+          };
+          floatBtn.onmouseout = function() {
+            floatBtn.style.background = 'rgba(18,18,22,0.85)';
+            floatBtn.style.borderColor = 'rgba(255,255,255,0.15)';
+            floatBtn.style.transform = 'scale(1)';
+          };
+          floatBtn.onclick = function(e) {
             e.preventDefault();
             e.stopPropagation();
             toggleAppFullscreen();
           };
-          headerContainer.appendChild(btn);
+          document.body.appendChild(floatBtn);
         }
+        
+        updateFullscreenUI();
       } catch(e) {}
     }
 
@@ -236,6 +308,11 @@ const INJECTED_BODY_SCRIPT = `
         toggleAppFullscreen();
       }
     });
+
+    document.addEventListener('fullscreenchange', updateFullscreenUI);
+    document.addEventListener('webkitfullscreenchange', updateFullscreenUI);
+    document.addEventListener('mozfullscreenchange', updateFullscreenUI);
+    document.addEventListener('MSFullscreenChange', updateFullscreenUI);
 
     window.addEventListener('message', function(e) {
       if (!e.data || typeof e.data !== 'object') return;
@@ -253,10 +330,10 @@ const INJECTED_BODY_SCRIPT = `
       }
     });
 
-    // Run header button injection on load and DOM mutations
-    document.addEventListener('DOMContentLoaded', injectHeaderFullscreenButton);
-    window.addEventListener('load', injectHeaderFullscreenButton);
-    setInterval(injectHeaderFullscreenButton, 1000);
+    // Run button injection on load and DOM mutations
+    document.addEventListener('DOMContentLoaded', injectFullscreenButtons);
+    window.addEventListener('load', injectFullscreenButtons);
+    setInterval(injectFullscreenButtons, 1200);
   })();
 </script>
 `;
@@ -264,7 +341,6 @@ const INJECTED_BODY_SCRIPT = `
 // Helper to read raw request body
 function getRequestBody(req: IncomingMessage): Promise<Buffer | null> {
   return new Promise((resolve) => {
-    // If body was already parsed by express or other middleware
     if ((req as any).body) {
       const b = (req as any).body;
       if (Buffer.isBuffer(b)) return resolve(b);
@@ -272,15 +348,26 @@ function getRequestBody(req: IncomingMessage): Promise<Buffer | null> {
       if (typeof b === 'object') return resolve(Buffer.from(JSON.stringify(b)));
     }
 
-    // If stream is not readable or already ended
-    if (typeof (req as any).on !== 'function' || (req as any).readableEnded || (req as any).complete) {
-      return resolve(null);
+    const chunks: Buffer[] = [];
+
+    if (typeof (req as any).read === 'function') {
+      let chunk;
+      while ((chunk = (req as any).read()) !== null) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
     }
 
-    const chunks: Buffer[] = [];
+    if ((req as any).readableEnded) {
+      return resolve(chunks.length > 0 ? Buffer.concat(chunks) : null);
+    }
+
+    if (typeof (req as any).on !== 'function') {
+      return resolve(chunks.length > 0 ? Buffer.concat(chunks) : null);
+    }
+
     const timer = setTimeout(() => {
       resolve(chunks.length > 0 ? Buffer.concat(chunks) : null);
-    }, 3000);
+    }, 1500);
 
     req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
     req.on('end', () => {
@@ -289,7 +376,7 @@ function getRequestBody(req: IncomingMessage): Promise<Buffer | null> {
     });
     req.on('error', () => {
       clearTimeout(timer);
-      resolve(null);
+      resolve(chunks.length > 0 ? Buffer.concat(chunks) : null);
     });
   });
 }
@@ -430,27 +517,20 @@ export default async function handler(req: any, res: any) {
         'User-Agent': (req.headers['user-agent'] as string) || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Referer': TARGET_ORIGIN + '/',
         'Origin': TARGET_ORIGIN,
-        'Accept': (req.headers['accept'] as string) || 'application/x-tss-framed, application/x-ndjson, application/json, text/plain, */*'
+        'Accept': (req.headers['accept'] as string) || '*/*'
       };
 
-      // Forward relevant incoming headers (TanStack RPC headers, cookies, encoding)
-      const allowedHeaders = [
-        'x-tsr-serverfn',
-        'x-tsr-call-id',
-        'content-type',
-        'accept-language',
-        'cookie',
-        'x-tss-raw',
-        'x-tss-framed',
-        'x-tss-serialized'
-      ];
-      for (const name of allowedHeaders) {
-        if (req.headers[name]) {
-          headers[name] = req.headers[name] as string;
+      // Forward all incoming headers to ensure TanStack Router RPC tokens and cookies are preserved
+      for (const [k, v] of Object.entries(req.headers)) {
+        const lk = k.toLowerCase();
+        if (lk !== 'host' && lk !== 'connection' && lk !== 'content-length' && lk !== 'content-encoding' && lk !== 'transfer-encoding') {
+          if (typeof v === 'string') {
+            headers[lk] = v;
+          }
         }
       }
       // Guarantee TanStack Server Function identifier header
-      headers['x-tsr-serverfn'] = 'true';
+      headers['x-tsr-serverfn'] = (req.headers['x-tsr-serverfn'] as string) || 'true';
 
       let bodyBuffer: Buffer | null = null;
       if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -468,7 +548,7 @@ export default async function handler(req: any, res: any) {
       try {
         const upstreamRes = await fetch(upstreamUrl, fetchOptions);
 
-        // Collect all upstream headers to forward back to client (preserves x-tss-serialized, etc.)
+        // Collect all upstream headers to forward back to client (preserves x-tss-serialized, Seroval metadata, etc.)
         const responseHeaders: Record<string, string> = {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -480,18 +560,8 @@ export default async function handler(req: any, res: any) {
             responseHeaders[key] = value;
           }
         });
-        if (!responseHeaders['Content-Type'] && !responseHeaders['content-type']) {
-          responseHeaders['Content-Type'] = 'application/json';
-        }
 
-        const contentType = upstreamRes.headers.get('content-type') || 'application/json';
-
-        if (contentType.includes('text') || contentType.includes('json') || contentType.includes('application/x-tss-framed')) {
-          const text = await upstreamRes.text();
-          const transformed = transformContent(text);
-          return sendResponse(res, upstreamRes.status, responseHeaders, transformed);
-        }
-
+        // IMPORTANT: NEVER transform _serverFn payloads! Raw Seroval serialization must remain intact.
         const buffer = Buffer.from(await upstreamRes.arrayBuffer());
         return sendResponse(res, upstreamRes.status, responseHeaders, buffer);
       } catch (err: any) {
@@ -500,7 +570,55 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // Route: /frame, /frame/*, or fallback proxy
+    // Route: /api/* (including streaming and public API endpoints)
+    if (route.startsWith('/api/') && !route.startsWith('/api/assets') && !route.startsWith('/api/_serverFn') && !route.startsWith('/api/frame')) {
+      const upstreamUrl = `${TARGET_ORIGIN}${route}${forwardedQuery}`;
+      const headers: Record<string, string> = {
+        'User-Agent': (req.headers['user-agent'] as string) || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': TARGET_ORIGIN + '/',
+        'Origin': TARGET_ORIGIN
+      };
+      for (const [k, v] of Object.entries(req.headers)) {
+        const lk = k.toLowerCase();
+        if (lk !== 'host' && lk !== 'connection' && lk !== 'content-length' && lk !== 'content-encoding' && lk !== 'transfer-encoding') {
+          if (typeof v === 'string') headers[lk] = v;
+        }
+      }
+
+      let bodyBuffer: Buffer | null = null;
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        bodyBuffer = await getRequestBody(req);
+      }
+
+      try {
+        const upstreamRes = await fetch(upstreamUrl, {
+          method: req.method || 'GET',
+          headers,
+          body: bodyBuffer || undefined,
+          redirect: 'follow'
+        });
+
+        const responseHeaders: Record<string, string> = {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': '*'
+        };
+        upstreamRes.headers.forEach((val, key) => {
+          const lk = key.toLowerCase();
+          if (lk !== 'content-encoding' && lk !== 'transfer-encoding' && lk !== 'connection') {
+            responseHeaders[key] = val;
+          }
+        });
+
+        const buffer = Buffer.from(await upstreamRes.arrayBuffer());
+        return sendResponse(res, upstreamRes.status, responseHeaders, buffer);
+      } catch (err: any) {
+        console.error(`Error proxying API route ${route}:`, err.message);
+        return sendResponse(res, 502, { 'Content-Type': 'text/plain' }, 'API Proxy Error');
+      }
+    }
+
+    // Route: /frame, /frame/*, or fallback proxy for pages (/category/*, /series/*, /watch/*, /library, /search, etc.)
     let targetPath = route
       .replace(/^\/api\/frame/, '')
       .replace(/^\/frame/, '') || '/';
@@ -526,7 +644,10 @@ export default async function handler(req: any, res: any) {
         const loc = upstreamRes.headers.get('location');
         if (loc) {
           const redirected = loc.startsWith('http') ? new URL(loc).pathname + new URL(loc).search : loc;
-          const destination = `/frame${redirected.startsWith('/') ? '' : '/'}${redirected}`;
+          const isFrameRequest = route.startsWith('/frame') || route.startsWith('/api/frame');
+          const destination = isFrameRequest
+            ? `/frame${redirected.startsWith('/') ? '' : '/'}${redirected}`
+            : redirected;
           if (typeof res.redirect === 'function') {
             return res.redirect(destination);
           } else {

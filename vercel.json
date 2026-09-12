@@ -30,8 +30,8 @@
       "destination": "/api?__route=/api/$1"
     },
     {
-      "source": "/((?!app-assets/|assets/|frame|api/|_serverFn|favicon\\.svg).*)",
-      "destination": "/index.html"
+      "source": "/(.*)",
+      "destination": "/api?__route=/$1"
     }
   ]
 }
